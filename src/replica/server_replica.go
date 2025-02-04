@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"sync"
+	"time"
 
 	"github.com/gorilla/mux"
 )
@@ -16,32 +16,56 @@ type User struct {
 	User string `json:"user"`
 }
 
-var users []User
-var mu sync.Mutex
+var users []User // Almacenamiento local en la réplica
 
-func syncUsers(w http.ResponseWriter, r *http.Request) {
-	var receivedUsers []User
-	json.NewDecoder(r.Body).Decode(&receivedUsers)
-
-	mu.Lock()
-	users = receivedUsers
-	mu.Unlock()
-
-	fmt.Println("Data replicated successfully")
+func syncData(w http.ResponseWriter, r *http.Request) {
+	var newUsers []User
+	json.NewDecoder(r.Body).Decode(&newUsers)
+	users = newUsers
+	fmt.Println(" Réplica actualizada:", users)
 	w.WriteHeader(http.StatusOK)
 }
 
 func getUsers(w http.ResponseWriter, r *http.Request) {
-	mu.Lock()
-	defer mu.Unlock()
 	json.NewEncoder(w).Encode(users)
 }
 
-func main() {
-	r := mux.NewRouter()
-	r.HandleFunc("/sync", syncUsers).Methods("POST")
-	r.HandleFunc("/users", getUsers).Methods("GET")
+func shortPolling() {
+	for {
+		resp, err := http.Get("http://localhost:5000/users")
+		if err == nil {
+			var newUsers []User
+			json.NewDecoder(resp.Body).Decode(&newUsers)
+			users = newUsers
+		} else {
+			log.Println("Error en Short Polling:", err)
+		}
+		time.Sleep(5 * time.Second)
+	}
+}
 
-	fmt.Println("Replica server running on port 5001")
+func longPolling() {
+	for {
+		resp, err := http.Get("http://localhost:5000/longpolling")
+		if err == nil {
+			var newUsers []User
+			json.NewDecoder(resp.Body).Decode(&newUsers)
+			users = newUsers
+			fmt.Println("📡 Long Polling: Datos actualizados")
+		} else {
+			log.Println("Error en Long Polling:", err)
+		}
+	}
+}
+
+func main() {
+	go shortPolling() 
+	go longPolling()  
+
+	r := mux.NewRouter()
+	r.HandleFunc("/users", getUsers).Methods("GET") // Solo lectura
+	r.HandleFunc("/sync", syncData).Methods("POST") 
+
+	fmt.Println("Servidor Réplica en puerto 5001")
 	log.Fatal(http.ListenAndServe(":5001", r))
 }
