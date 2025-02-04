@@ -51,7 +51,7 @@ func longPolling() {
 			var newUsers []User
 			json.NewDecoder(resp.Body).Decode(&newUsers)
 			users = newUsers
-			fmt.Println("📡 Long Polling: Datos actualizados")
+			fmt.Println("Long Polling: Datos actualizados")
 		} else {
 			log.Println("Error en Long Polling:", err)
 		}
